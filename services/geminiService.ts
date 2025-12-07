@@ -210,12 +210,13 @@ export class AdaService {
   private ai: GoogleGenAI;
   private inputAudioContext: AudioContext | null = null;
   private outputAudioContext: AudioContext | null = null;
-  private scriptProcessor: ScriptProcessorNode | null = null; // Keep reference to prevent GC
+  private scriptProcessor: ScriptProcessorNode | null = null; 
   private currentNMEA: NMEAData;
   private currentShipData: ShipData;
   private onAgentStateChange: (state: string) => void;
   private onAction: (action: string, payload?: any) => void;
   private session: any = null;
+  private textChat: any = null; // Persistent Chat for Text mode
   
   constructor(
       apiKey: string, 
@@ -245,7 +246,6 @@ export class AdaService {
     this.inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
     this.outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
     
-    // Ensure AudioContext is running
     if (this.outputAudioContext.state === 'suspended') {
         await this.outputAudioContext.resume();
     }
@@ -254,18 +254,15 @@ export class AdaService {
     const outputNode = this.outputAudioContext.createGain();
     outputNode.connect(this.outputAudioContext.destination);
 
-    // Setup Microphone Stream
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const source = this.inputAudioContext.createMediaStreamSource(stream);
     
-    // Assign to class property to prevent garbage collection
     this.scriptProcessor = this.inputAudioContext.createScriptProcessor(4096, 1, 1);
     
     this.scriptProcessor.onaudioprocess = (e) => {
       const inputData = e.inputBuffer.getChannelData(0);
       const pcmBlob = createPCMBlob(inputData);
       
-      // Send data only if session is ready
       if (this.session) {
         this.session.sendRealtimeInput({ media: pcmBlob });
       }
@@ -290,13 +287,10 @@ export class AdaService {
             console.log("Ada Live Session Opened");
         },
         onmessage: async (msg: LiveServerMessage) => {
-          
-          // Handle Audio Output
           const audioData = msg.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
           if (audioData) {
             this.onAgentStateChange('SPEAKING');
             if (this.outputAudioContext) {
-                // Check state again before playing
                 if (this.outputAudioContext.state === 'suspended') {
                     await this.outputAudioContext.resume();
                 }
@@ -315,22 +309,21 @@ export class AdaService {
                 nextStartTime += audioBuffer.duration;
                 
                 source.onended = () => {
-                   // Simple heuristic to revert state
                    setTimeout(() => this.onAgentStateChange('IDLE'), 100);
                 };
             }
           }
 
-          // Handle Tool Calls
           if (msg.toolCall) {
             this.onAgentStateChange('EXECUTING');
             for (const fc of msg.toolCall.functionCalls) {
                 let result: any = { error: "Unknown function" };
-                
+                const args = fc.args as any;
+
                 if (fc.name === 'getBoatStatus') {
                     result = this.currentNMEA;
                 } else if (fc.name === 'getWeather') {
-                    const loc = (fc.args as any).location?.toLowerCase() || 'istanbul';
+                    const loc = args.location?.toLowerCase() || 'istanbul';
                     const weather = Object.entries(MOCK_WEATHER_DATA).find(([k]) => loc.includes(k))?.[1];
                     result = weather || { temp: 20, wind: 10, condition: 'Bilinmiyor' };
                 } else if (fc.name === 'planRoute') {
@@ -341,48 +334,43 @@ export class AdaService {
                         waypoints: ["Kalamış", "Marmara Adası", "Çanakkale Boğazı", "Baba Burun", "Sakız Boğazı", "Bodrum"]
                     };
                 } else if (fc.name === 'updateRoute') {
-                    const { destination, eta, weatherSummary, waypoints } = fc.args as any;
-                    this.onAction('UPDATE_ROUTE', { destination, eta, weatherSummary, waypoints });
-                    result = { status: "Route Updated", newEta: eta };
+                    this.onAction('UPDATE_ROUTE', { 
+                        destination: args.destination, 
+                        eta: args.eta, 
+                        weatherSummary: args.weatherSummary, 
+                        waypoints: args.waypoints 
+                    });
+                    result = { status: "Route Updated", newEta: args.eta };
                 } else if (fc.name === 'toggleSpyglass') {
-                    const active = (fc.args as any).active ?? true;
+                    const active = args.active ?? true;
                     this.onAction('TOGGLE_SPYGLASS', active);
                     result = { status: active ? "Spyglass opened" : "Spyglass closed" };
                 } else if (fc.name === 'setEmergencyState') {
-                    const level = (fc.args as any).level;
-                    const details = (fc.args as any).details || '';
-                    this.onAction('SET_EMERGENCY', { level, details });
-                    result = { status: "ALARM TRIGGERED", level: level };
+                    this.onAction('SET_EMERGENCY', { level: args.level, details: args.details || '' });
+                    result = { status: "ALARM TRIGGERED", level: args.level };
                 } else if (fc.name === 'getShipInfo') {
                     result = this.currentShipData;
                 } else if (fc.name === 'addToLogbook') {
-                    const { event, category } = fc.args as any;
-                    this.onAction('ADD_LOG_ENTRY', { event, category });
+                    this.onAction('ADD_LOG_ENTRY', { event: args.event, category: args.category });
                     result = { status: "Logged", timestamp: new Date().toISOString() };
                 } else if (fc.name === 'updateShipStatus') {
-                    const { type, value } = fc.args as any;
-                    this.onAction('UPDATE_SHIP_DATA', { type, value });
-                    result = { status: "Updated", type, value };
+                    this.onAction('UPDATE_SHIP_DATA', { type: args.type, value: args.value });
+                    result = { status: "Updated", type: args.type, value: args.value };
                 } else if (fc.name === 'makeRadioCall') {
-                    const { channel, message, to } = fc.args as any;
-                    this.onAction('MAKE_RADIO_CALL', { channel, message, to });
-                    result = { status: "Transmission Sent", channel };
+                    this.onAction('MAKE_RADIO_CALL', { channel: args.channel, message: args.message, to: args.to });
+                    result = { status: "Transmission Sent", channel: args.channel };
                 } else if (fc.name === 'setEngineControls') {
-                    const { action, rpm } = fc.args as any;
-                    this.onAction('CONTROL_ENGINE', { action, rpm });
-                    result = { status: "Engine command executed", action, rpm };
+                    this.onAction('CONTROL_ENGINE', { action: args.action, rpm: args.rpm });
+                    result = { status: "Engine command executed", action: args.action, rpm: args.rpm };
                 } else if (fc.name === 'setDriveMode') {
-                    const { mode } = fc.args as any;
-                    this.onAction('CONTROL_MODE', mode);
-                    result = { status: "Drive Mode Set", mode };
+                    this.onAction('CONTROL_MODE', args.mode);
+                    result = { status: "Drive Mode Set", mode: args.mode };
                 } else if (fc.name === 'controlSwitch') {
-                    const { device, state } = fc.args as any;
-                    this.onAction('CONTROL_SWITCH', { device, state });
-                    result = { status: "Switch Toggled", device, state };
+                    this.onAction('CONTROL_SWITCH', { device: args.device, state: args.state });
+                    result = { status: "Switch Toggled", device: args.device, state: args.state };
                 } else if (fc.name === 'setAutopilot') {
-                    const { enabled, heading } = fc.args as any;
-                    this.onAction('CONTROL_AUTOPILOT', { enabled, heading });
-                    result = { status: "Autopilot Set", enabled };
+                    this.onAction('CONTROL_AUTOPILOT', { enabled: args.enabled, heading: args.heading });
+                    result = { status: "Autopilot Set", enabled: args.enabled };
                 }
 
                 sessionPromise.then(session => {
@@ -411,24 +399,18 @@ export class AdaService {
     this.session = await sessionPromise;
   }
 
-  // Allow injecting text (e.g. from Radio) back into the conversation so Ada can react
+  // --- Unified Text/Voice Interface ---
+
   public feedIncomingVHF(text: string) {
-      if (this.session) {
-          try {
-              // Send as a user message to prompt Ada to respond
-              this.session.send({
-                  clientContent: {
-                      turns: [{
-                          role: 'user',
-                          parts: [{ text: `[SİSTEM BİLGİSİ - VHF TELSİZ DUYULDU]: "${text}". Lütfen bu mesajı Kaptana raporla.` }]
-                      }],
-                      turnComplete: true
-                  }
-              });
-          } catch (e) {
-              console.error("Failed to feed VHF to session", e);
-          }
-      }
+      // Live API currently does not support arbitrary text injection easily for this use case.
+      // We just log it for now.
+      console.log(`[VHF] ${text}`);
+  }
+
+  public async sendUserText(text: string) {
+      // Route all text interactions to the standard Text Chat model.
+      // The Live API is reserved for voice.
+      return await this.askAdaText(text);
   }
 
   public async disconnect() {
@@ -450,22 +432,22 @@ export class AdaService {
     this.onAgentStateChange('IDLE');
   }
 
-  // --- Text/Reasoning API (Thinking Mode) ---
+  // --- Text/Reasoning API (Thinking/Flash Mode) ---
   
-  public async askAdaThinking(prompt: string, history: any[] = []): Promise<string> {
-    const model = this.ai.models.getGenerativeModel({
-        model: 'gemini-2.5-flash-thinking', 
-        systemInstruction: SYSTEM_INSTRUCTION_ADA,
-        tools: tools
-    });
+  private async askAdaText(prompt: string): Promise<string> {
+    if (!this.textChat) {
+        this.textChat = this.ai.chats.create({
+            model: 'gemini-2.5-flash', 
+            config: {
+                systemInstruction: SYSTEM_INSTRUCTION_ADA,
+                tools: tools
+            }
+        });
+    }
 
-    const chat = model.startChat({
-        history: history
-    });
-    
-    const augmentedPrompt = `[Current Boat Status: Speed ${this.currentNMEA.speedOverGround}kn, Wind ${this.currentNMEA.windSpeed}kn]\nUser: ${prompt}`;
+    const augmentedPrompt = `[Current Boat Status: Speed ${this.currentNMEA.speedOverGround.toFixed(1)}kn, Wind ${this.currentNMEA.windSpeed.toFixed(1)}kn, Position: ${this.currentNMEA.latitude.toFixed(4)}/${this.currentNMEA.longitude.toFixed(4)}]\nUser: ${prompt}`;
 
-    const result = await chat.sendMessage(augmentedPrompt);
-    return result.response.text();
+    const result = await this.textChat.sendMessage({ message: augmentedPrompt });
+    return result.text;
   }
 }
