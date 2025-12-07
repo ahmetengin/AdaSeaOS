@@ -1,3 +1,5 @@
+
+
 // Data types for NMEA2000 Simulation
 export interface HybridData {
     mode: 'DIESEL' | 'ELECTRIC' | 'HYBRID';
@@ -64,6 +66,65 @@ export interface AutopilotData {
     mode: 'AUTO' | 'WIND' | 'NAV' | 'STANDBY';
 }
 
+// --- NEW TANK & FLUID MANAGEMENT ---
+
+export interface TankLevel {
+    id: string;
+    level: number; // % 0-100
+    capacity: number; // Liters
+    currentLiters: number;
+}
+
+export interface PumpStatus {
+    active: boolean;
+    sourceTankId: string; // e.g., 'tank1'
+    targetTankId: string; // e.g., 'tank2'
+    rateLpm: number; // Liters per minute
+}
+
+export interface DetailedTanks {
+    fuel: {
+        tank1: TankLevel; // Main Day Tank
+        tank2: TankLevel; // Port Storage
+        tank3: TankLevel; // Stbd Storage
+        totalLevel: number; // %
+        totalLiters: number;
+        transferPump: PumpStatus;
+    };
+    freshWater: {
+        tank1: TankLevel; // Fwd
+        tank2: TankLevel; // Aft
+        totalLevel: number; // %
+        transferPump: PumpStatus;
+    };
+    blackWater: {
+        tank1: TankLevel; // Master
+        tank2: TankLevel; // Guest
+        totalLevel: number; // %
+        pumpOutActive: boolean;
+    };
+    greyWater: {
+        tank1: TankLevel;
+        totalLevel: number; // %
+    };
+}
+
+// --- SENSORS & ATTITUDE ---
+export interface AttitudeData {
+    roll: number; // Degrees (+ Stbd, - Port)
+    pitch: number; // Degrees (+ Bow Up, - Bow Down)
+    yaw: number; // Rate of turn
+}
+
+export interface TripComputer {
+    range: number; // NM
+    timeToEmpty: string; // HH:MM
+    fuelEconomy: number; // L/NM
+    instantFuelRate: number; // L/h (Total)
+    averageFuelRate: number; // L/h
+    fuelUsedTrip: number; // Liters
+}
+
 export interface NMEAData {
   speedOverGround: number; // Knots
   courseOverGround: number; // Degrees
@@ -72,16 +133,45 @@ export interface NMEAData {
   windAngle: number; // Degrees (Relative)
   depth: number; // Meters
   waterTemp: number; // Celsius
+  airTemp: number; // Celsius - Added for comprehensive environmental data
+  barometricPressure: number; // Hectopascals (hPa) - Added for comprehensive environmental data
+  relativeHumidity: number; // Percentage (%) - Added for comprehensive environmental data
   latitude: number;
   longitude: number;
+  
+  // New Sensor Group
+  attitude: AttitudeData;
+
   hybrid: HybridData; 
   engines: {
       port: VolvoEngineData;
       stbd: VolvoEngineData;
   };
+  tanks: DetailedTanks; // Replaces simple tank data
+  trip: TripComputer; // New Trip Data
   electrics: VictronData;
   lighting: LightingData;
   autopilot: AutopilotData;
+}
+
+// --- DASHBOARD CUSTOMIZATION TYPES ---
+
+export type WidgetSize = 'sm' | 'md' | 'lg' | 'xl';
+
+export interface DashboardWidget {
+    id: string; // Unique ID for the widget instance
+    metricKey: string; // Path to data (e.g., 'engines.port.rpm')
+    label: string; // Custom label override
+    size: WidgetSize;
+    color: string; // Tailwind text color class
+}
+
+export interface MetricDefinition {
+    key: string;
+    label: string;
+    unit: string;
+    category: 'NAV' | 'ENGINE' | 'ENV' | 'ELEC' | 'TANK' | 'TRIP' | 'SENSOR';
+    getValue: (data: NMEAData) => string | number;
 }
 
 // Signal K Types
@@ -212,10 +302,68 @@ export interface MaintenanceTask {
     status: 'OK' | 'DUE' | 'OVERDUE';
 }
 
+// Define the structure of volvo_ocean_65.json
+export interface VolvoOcean65Data {
+    yacht: {
+        name: string;
+        price: {
+            amount: number;
+            currency: string;
+            vatExcluded: boolean;
+        };
+        referenceId: string;
+        displacementKg: number;
+        builderDesigner: string;
+        model: string;
+        designer: string;
+        year: number;
+        material: string;
+        location: string;
+        engine: string;
+        beamMtr: number;
+        draftMtr: number;
+        description: string;
+        sections: Array<{
+            title: string;
+            items: string[];
+        }>;
+        readyToRace: string;
+        palmaresHistory: string[]; // This is the key we need!
+        refitRenewals2021_2022: string[];
+        generalSpecs: string[];
+        riggingDetails: string[];
+        halyard: string[];
+        furler: string[];
+        newSets: string[];
+        newSetsHalyard: string[];
+        newSetsFurler: string[];
+        leashing: string;
+        completeNewSetOfHalyardsAndSpareOnes: boolean;
+        sailsDetails: string[];
+        accommodations: string[];
+        deckAndCockpitComponents: string[];
+        winchesInventory: Array<{
+            type: string;
+            brandModel: string;
+            quantity: number;
+        }>;
+        hydraulicsInventory: string[];
+        electricsInventory: string[];
+        safetyInventory: string[];
+        electronicsAndNavigationalGearInventory: string[];
+        additionalItems: {
+            waterBallast: string[];
+        };
+        extraItems: string[];
+    };
+}
+
+
 export interface ShipData {
     logbook: LogEntry[];
-    tanks: TankStatus;
+    tanks: TankStatus; // Legacy summary for admin logic, NMEA has detailed
     manifest: Person[];
     maintenance: MaintenanceTask[];
     menuPlan: string;
+    volvoOcean65: VolvoOcean65Data | null; // Add this new property
 }

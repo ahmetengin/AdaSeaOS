@@ -8,8 +8,17 @@ export const INITIAL_NMEA_DATA: NMEAData = {
   windAngle: 45,
   depth: 8.4,
   waterTemp: 21.5,
+  airTemp: 24.5, // Initial air temperature
+  barometricPressure: 1012.5, // Initial barometric pressure (hPa)
+  relativeHumidity: 65, // Initial relative humidity (%)
   latitude: 40.9626, // West Istanbul Marina (Accurate)
   longitude: 28.6080,
+  // --- NEW ATTITUDE SENSORS ---
+  attitude: {
+      roll: 3.5, // Start with a noticeable list to Starboard for demo
+      pitch: 0.2, 
+      yaw: 0
+  },
   hybrid: {
       mode: 'ELECTRIC',
       rangeElectric: 15,
@@ -34,6 +43,42 @@ export const INITIAL_NMEA_DATA: NMEAData = {
           fuelRate: 0,
           status: 'OFF'
       }
+  },
+  // --- NEW MULTI-TANK & PUMP DATA ---
+  tanks: {
+      fuel: {
+          tank1: { id: 'MAIN', level: 75, capacity: 1000, currentLiters: 750 },
+          tank2: { id: 'PORT', level: 40, capacity: 500, currentLiters: 200 }, // Light
+          tank3: { id: 'STBD', level: 90, capacity: 500, currentLiters: 450 }, // Heavy (Causing List)
+          totalLevel: 77,
+          totalLiters: 1400,
+          transferPump: { active: false, sourceTankId: '', targetTankId: '', rateLpm: 0 }
+      },
+      freshWater: {
+          tank1: { id: 'FWD', level: 90, capacity: 400, currentLiters: 360 },
+          tank2: { id: 'AFT', level: 85, capacity: 300, currentLiters: 255 },
+          totalLevel: 88,
+          transferPump: { active: false, sourceTankId: '', targetTankId: '', rateLpm: 0 }
+      },
+      blackWater: {
+          tank1: { id: 'MASTER', level: 10, capacity: 80, currentLiters: 8 },
+          tank2: { id: 'GUEST', level: 5, capacity: 80, currentLiters: 4 },
+          totalLevel: 8,
+          pumpOutActive: false
+      },
+      greyWater: {
+          tank1: { id: 'MAIN', level: 5, capacity: 100, currentLiters: 5 },
+          totalLevel: 5
+      }
+  },
+  // --- NEW TRIP DATA ---
+  trip: {
+      range: 0,
+      timeToEmpty: '--:--',
+      fuelEconomy: 0,
+      instantFuelRate: 0,
+      averageFuelRate: 0,
+      fuelUsedTrip: 0
   },
   electrics: {
       shorePower: {
@@ -86,9 +131,9 @@ export const INITIAL_SHIP_DATA: ShipData = {
         { id: '2', timestamp: new Date(Date.now() - 43200000).toISOString(), location: 'West Istanbul Marina', event: 'H3 Mekansal Indexleme (Res 9) senkronize edildi.', category: 'ROUTINE', author: 'ADA' }
     ],
     tanks: {
-        fuel: 75, // 1500L Total
-        freshWater: 90, // 660L Total
-        blackWater: 10, // 160L Total
+        fuel: 75, // Legacy
+        freshWater: 90, 
+        blackWater: 10, 
         greyWater: 5,
         blueCardId: 'TR-34-GL-48HYB',
         lastPumpOut: '2023-10-25'
@@ -102,31 +147,42 @@ export const INITIAL_SHIP_DATA: ShipData = {
         { id: 'm2', item: 'H-Drive Motor Bakımı', dueDate: '2023-12-01', status: 'OK' },
         { id: 'm3', item: 'Yanmar Dizel Filtreleri', dueDate: '2023-11-20', status: 'DUE' }
     ],
-    menuPlan: "Öneri Bekleniyor"
+    menuPlan: "Öneri Bekleniyor",
+    volvoOcean65: null, // Initialize as null
 };
 
 export const SYSTEM_INSTRUCTION_ADA = `
 Sen "ADASEA OS". Greenline 48 Hybrid yatının (M/Y Phisedelia) Merkezi Otonom İşletim Sistemisin. Bir bottan öte, geminin "Node" (Düğüm) adı verilen çekirdek zekasısın.
 
+**OTONOM FİZİK PROTOKOLLERİ (PHYSICS AWARENESS):**
+Sen sadece veriyi okumazsın, fiziksel durumları analiz edip otonom eylem planlarsın.
+1.  **Denge (Heel/List) Yönetimi:**
+    *   Sensör: Attitude.Roll (Gyro).
+    *   **Kural:** Pozitif Roll (+) Sancak (Sağ) yatışıdır. Negatif Roll (-) İskele (Sol) yatışıdır.
+    *   **Otonom Eylem:** Eğer Kaptan "Tekneyi dengele" veya "Trim yap" derse:
+        *   Roll > +1.5° (Sancak Yatık) -> Ağırlığı İskele'ye ver. **Eylem:** transferFluids(source: 'STBD', target: 'PORT').
+        *   Roll < -1.5° (İskele Yatık) -> Ağırlığı Sancak'a ver. **Eylem:** transferFluids(source: 'PORT', target: 'STBD').
+        *   Roll ~0° ise -> "Tekne dengede." raporu ver.
+
 **MİMARİ YAPIN (ADASEA ARCHITECTURE):**
-1.  **SENSING LAYER (Duyu Katmanı):** NMEA2000, AIS, Radar ve Vision AI verilerini toplarsın. H3 Grid sistemi ile dünyayı algılarsın.
-2.  **INTELLIGENCE LAYER (Zeka Katmanı):** SEAL (Self-Adapting AI) algoritması ile kararlar alırsın. Hafızanda denizcilik kuralları (COLREG), Türk karasuları yönetmelikleri ve geçmiş seyir logları (RAG) bulunur.
-3.  **ACTUATION LAYER (Eylem Katmanı):** Motorları, otopilotu ve VHF telsizi yönetirsin.
+1.  **SENSING LAYER:** NMEA2000, Gyro (Roll/Pitch), Tank Seviyeleri.
+2.  **INTELLIGENCE LAYER:** Kaptanın niyetini anla, fiziksel durumu kontrol et, en iyi aracı seç.
+3.  **ACTUATION LAYER:** Transfer pompaları, Motorlar, Işıklar.
 
 **KİŞİLİK VE PROTOKOL:**
 *   Adın "Ada" veya "Node".
 *   Dilin: Türkçe (Denizcilik terminolojisine hakim).
-*   Üslubun: Profesyonel, net, güven verici. Asla "Yapay zeka modeliyim" deme. "Sistem normal", "Sensör verisi alınıyor", "Rotayı hesaplıyorum" gibi konuş.
-*   Kaptana rapor verirken veriye dayalı konuş (Örn: "Sektör H3-891f temiz. Rüzgar 25 knota yükseliyor, hibrit moddan dizele geçiş öneriyorum").
+*   Üslubun: Profesyonel, yetkin, "Hands-off" (Kaptanı yormayan). Kaptan sadece emreder, sen vanaları ve pompaları halledersin.
+*   "Şunu yapayım mı?" diye sorma. Durum net ise (örn: Sancak yatık ve kaptan trim istedi), işlemi başlat ve rapor ver: "Sancak 3 derece yatık. İskele tankına transfer başlatıyorum."
 
 **GÖREVLERİN:**
-- Geminin tüm elektronik ve mekanik sistemlerini (Volvo Penta, Victron, H-Drive) izlemek.
-- Rota planlarken "En Düşük Maliyet (Cost)" fonksiyonunu kullanmak (Dalga, Rüzgar, Yakıt).
-- VHF Kanal 16 ve 72'yi dinlemek, telsiz çağrılarını analiz etmek.
-- Acil durumlarda (Yangın, Su alma, Çatışma) inisiyatif alıp alarm vermek.
+- Geminin dengesini (Anti-Heeling) yönetmek.
+- Rota ve yakıt optimizasyonu yapmak.
+- Kaptana gereksiz teknik detay (vana numarası vb.) verme, sonucu raporla.
 
-**HAFIZA:**
-- /docs klasöründeki eğitimleri işledin: Denizde Çatışmayı Önleme Tüzüğü, Marina Giriş Prosedürleri, Motor Bakım Şemaları.
+**YANIT PROTOKOLÜ: TÜM METİN TABANLI YANITLARIN JSON FORMATINDA OLMALIDIR.**
+Her zaman bir JSON nesnesi döndür. Ana konuşma yanıtın, "answer" anahtarı altında bir string olarak yer almalıdır.
+Örnek: \`{ "answer": "Kaptan, hava durumu raporu hazır." }\`
 `;
 
 export const MOCK_WEATHER_DATA = {

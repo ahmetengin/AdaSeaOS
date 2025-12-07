@@ -1,16 +1,22 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { NMEAData, AgentStatus, Message, VHFStatus, ShipData, LogEntry } from './types';
+import { NMEAData, AgentStatus, Message, VHFStatus, ShipData, LogEntry, DashboardWidget, VolvoOcean65Data } from './types';
 import { INITIAL_NMEA_DATA, INITIAL_SHIP_DATA } from './constants';
+import { DEFAULT_DASHBOARD } from './utils/dashboardUtils';
 import { AdaService } from './services/geminiService';
 import { SignalKService } from './services/signalKService';
 import { SpyglassMap } from './components/SpyglassMap';
 import { VHFRadio } from './components/VHFRadio';
 import { ShipManagement } from './components/ShipManagement';
 import { TacticalCompass } from './components/TacticalCompass';
+import { DashboardSetup } from './components/DashboardSetup';
 import { Gauge } from './components/Gauge';
 import { ControlPanel } from './components/ControlPanel';
 import { SystemStatus } from './components/SystemStatus';
 import { SystemLayers } from './components/SystemLayers';
+
+// Import the Data from the TS file
+import { volvoOcean65Data } from './docs/volvoOcean65Data';
 
 export default function App() {
   const [apiKey, setApiKey] = useState<string>('');
@@ -27,6 +33,10 @@ export default function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [showSpyglass, setShowSpyglass] = useState(false);
   
+  // DASHBOARD STATE
+  const [dashboardWidgets, setDashboardWidgets] = useState<DashboardWidget[]>(DEFAULT_DASHBOARD);
+  const [showDashboardSetup, setShowDashboardSetup] = useState(false);
+
   const [vhfStatus, setVhfStatus] = useState<VHFStatus>({
       channel: 16,
       isReceiving: false,
@@ -37,6 +47,24 @@ export default function App() {
   
   const adaServiceRef = useRef<AdaService | null>(null);
   const signalKRef = useRef<SignalKService | null>(null);
+
+  // --- PERSISTENCE: Load/Save Dashboard ---
+  useEffect(() => {
+      const saved = localStorage.getItem('ada_dashboard_config');
+      if (saved) {
+          try {
+              setDashboardWidgets(JSON.parse(saved));
+          } catch (e) {
+              console.error("Failed to load dashboard config", e);
+          }
+      }
+  }, []);
+
+  const saveDashboardConfig = (newWidgets: DashboardWidget[]) => {
+      setDashboardWidgets(newWidgets);
+      localStorage.setItem('ada_dashboard_config', JSON.stringify(newWidgets));
+      setShowDashboardSetup(false);
+  };
 
   // --- BOOT SEQUENCE SIMULATION ---
   useEffect(() => {
@@ -62,6 +90,15 @@ export default function App() {
         }, delay);
     });
   }, []);
+
+  // --- Load Volvo Ocean 65 Data (NEW) ---
+  useEffect(() => {
+    setShipData(prev => ({
+      ...prev,
+      volvoOcean65: volvoOcean65Data // Load the static TS Data
+    }));
+  }, []); // Run once on component mount
+
 
   // --- Helper: Simulate Marina Voice ---
   const speakAsMarina = (text: string) => {
@@ -124,6 +161,7 @@ export default function App() {
       else if (action === 'CONTROL_MODE') signalKRef.current.setDriveMode(payload);
       else if (action === 'CONTROL_SWITCH') signalKRef.current.toggleLight(payload.device, payload.state);
       else if (action === 'CONTROL_AUTOPILOT') signalKRef.current.setAutopilot(payload.enabled, payload.heading);
+      else if (action === 'CONTROL_PUMP') signalKRef.current.setTransferPump(payload.type, payload.active, payload.source, payload.target);
   };
 
   // --- VHF Chatter Simulation ---
@@ -263,6 +301,15 @@ export default function App() {
             />
         }
 
+        {/* Dashboard Setup Overlay */}
+        {showDashboardSetup && (
+            <DashboardSetup 
+                widgets={dashboardWidgets}
+                onSave={saveDashboardConfig}
+                onClose={() => setShowDashboardSetup(false)}
+            />
+        )}
+
         {/* --- MAIN COCKPIT GRID --- */}
         <main className="flex-1 p-2 grid grid-cols-1 lg:grid-cols-12 gap-2 overflow-y-auto lg:overflow-hidden relative pb-20">
             
@@ -272,7 +319,9 @@ export default function App() {
                      <TacticalCompass 
                         data={nmeaData} 
                         status={agentStatus}
+                        widgets={dashboardWidgets}
                         onTalk={toggleVoiceInterface} 
+                        onEdit={() => setShowDashboardSetup(true)}
                      />
                  </div>
             </div>

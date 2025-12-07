@@ -1,3 +1,5 @@
+
+
 import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type, Schema, Tool } from "@google/genai";
 import { SYSTEM_INSTRUCTION_ADA, MOCK_WEATHER_DATA } from '../constants';
 import { NMEAData, ShipData } from '../types';
@@ -7,7 +9,7 @@ import { createPCMBlob, decodeAudio, decodeAudioData } from './audioUtils';
 
 const getBoatStatusDecl: FunctionDeclaration = {
   name: 'getBoatStatus',
-  description: 'Mevcut tekne sensör verilerini (NMEA2000) okur: Hız, Rüzgar, Derinlik, Konum.',
+  description: 'Mevcut tekne sensör verilerini (NMEA2000) okur: Hız, Rüzgar, Derinlik, Konum, Tank Seviyeleri, Gyro.',
   parameters: {
     type: Type.OBJECT,
     properties: {},
@@ -185,6 +187,22 @@ const setAutopilotDecl: FunctionDeclaration = {
     }
 };
 
+// --- NEW TRANSFER TOOL ---
+const transferFluidsDecl: FunctionDeclaration = {
+    name: 'transferFluids',
+    description: 'Tanklar arası yakıt veya su transferi işlemini başlatır veya durdurur.',
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            type: { type: Type.STRING, enum: ['FUEL', 'WATER'], description: 'Sıvı tipi.' },
+            source: { type: Type.STRING, description: 'Kaynak tank (örn: 1, 2, MAIN, PORT).' },
+            target: { type: Type.STRING, description: 'Hedef tank.' },
+            active: { type: Type.BOOLEAN, description: 'İşlemi başlat (true) veya durdur (false).' }
+        },
+        required: ['type', 'active']
+    }
+};
+
 const tools: Tool[] = [{
   functionDeclarations: [
       getBoatStatusDecl, 
@@ -200,7 +218,8 @@ const tools: Tool[] = [{
       setEngineControlsDecl,
       setDriveModeDecl,
       controlSwitchDecl,
-      setAutopilotDecl
+      setAutopilotDecl,
+      transferFluidsDecl
   ]
 }];
 
@@ -275,7 +294,7 @@ export class AdaService {
       model: 'gemini-2.5-flash-native-audio-preview-09-2025',
       config: {
         responseModalities: [Modality.AUDIO],
-        systemInstruction: SYSTEM_INSTRUCTION_ADA,
+        systemInstruction: SYSTEM_INSTRUCTION_ADA, // Use the JSON-aware system instruction
         tools: tools,
         speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' }}
@@ -371,6 +390,9 @@ export class AdaService {
                 } else if (fc.name === 'setAutopilot') {
                     this.onAction('CONTROL_AUTOPILOT', { enabled: args.enabled, heading: args.heading });
                     result = { status: "Autopilot Set", enabled: args.enabled };
+                } else if (fc.name === 'transferFluids') {
+                    this.onAction('CONTROL_PUMP', { type: args.type, active: args.active, source: args.source, target: args.target });
+                    result = { status: "Pump Command Sent", active: args.active };
                 }
 
                 sessionPromise.then(session => {
@@ -439,7 +461,7 @@ export class AdaService {
         this.textChat = this.ai.chats.create({
             model: 'gemini-2.5-flash', 
             config: {
-                systemInstruction: SYSTEM_INSTRUCTION_ADA,
+                systemInstruction: SYSTEM_INSTRUCTION_ADA, // Use the JSON-aware system instruction
                 tools: tools
             }
         });
@@ -448,6 +470,19 @@ export class AdaService {
     const augmentedPrompt = `[Current Boat Status: Speed ${this.currentNMEA.speedOverGround.toFixed(1)}kn, Wind ${this.currentNMEA.windSpeed.toFixed(1)}kn, Position: ${this.currentNMEA.latitude.toFixed(4)}/${this.currentNMEA.longitude.toFixed(4)}]\nUser: ${prompt}`;
 
     const result = await this.textChat.sendMessage({ message: augmentedPrompt });
-    return result.text;
+    
+    let parsedResult: { answer?: string };
+    try {
+        parsedResult = JSON.parse(result.text);
+        if (parsedResult.answer === undefined) {
+            console.error("AI response JSON missing 'answer' key:", result.text);
+            return "Ada: Sistem yanıtı eksik. (Hata kodu: JSON_KEY_MISSING)";
+        }
+    } catch (e) {
+        console.error("Failed to parse AI response as JSON:", e, "Raw response:", result.text);
+        return "Ada: Sistem yanıtını işleyemedim. Lütfen tekrar deneyin. (Hata kodu: JSON_PARSE_FAIL)";
+    }
+    
+    return parsedResult.answer;
   }
 }

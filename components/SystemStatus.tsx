@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { NMEAData } from '../types';
 
@@ -6,9 +7,18 @@ interface SystemStatusProps {
 }
 
 export const SystemStatus: React.FC<SystemStatusProps> = ({ data }) => {
-    // Mock Air Temp since NMEA usually gives Water Temp
-    const airTemp = 24.5;
     const isCharging = data.electrics.battery.state === 'CHARGING';
+
+    // Determine weather trend based on barometric pressure change
+    // For simulation, we assume a simple trend based on the current value.
+    // In a real system, this would compare current to historical data.
+    const getPressureTrend = (pressure: number) => {
+        if (pressure > 1015) return "BASINÇ YÜKSEK";
+        if (pressure < 1005) return "BASINÇ DÜŞÜK";
+        return "BASINÇ SABİT";
+    };
+
+    const pressureTrend = data.barometricPressure ? getPressureTrend(data.barometricPressure) : 'VERİ YOK';
 
     return (
         <div className="glass-panel p-3 grid grid-cols-2 gap-3">
@@ -58,11 +68,21 @@ export const SystemStatus: React.FC<SystemStatusProps> = ({ data }) => {
                 
                 <div className="flex items-center justify-between">
                     <span className="text-[10px] text-slate-400">HAVA</span>
-                    <span className="text-sm font-display font-bold text-white">{airTemp}°C</span>
+                    <span className="text-sm font-display font-bold text-white">{data.airTemp.toFixed(1)}°C</span>
                 </div>
                 <div className="flex items-center justify-between">
                     <span className="text-[10px] text-slate-400">DENİZ</span>
                     <span className="text-sm font-display font-bold text-cyan-300">{data.waterTemp.toFixed(1)}°C</span>
+                </div>
+                {/* New: Barometric Pressure */}
+                <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400">BASINÇ</span>
+                    <span className="text-sm font-display font-bold text-purple-300">{data.barometricPressure?.toFixed(1) || '---'}hPa</span>
+                </div>
+                {/* New: Relative Humidity */}
+                <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400">NEM</span>
+                    <span className="text-sm font-display font-bold text-indigo-300">{data.relativeHumidity?.toFixed(0) || '---'}%</span>
                 </div>
                 
                 <div className="mt-auto bg-slate-800/50 rounded p-2 border border-slate-700/50">
@@ -71,8 +91,8 @@ export const SystemStatus: React.FC<SystemStatusProps> = ({ data }) => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <div>
-                            <div className="text-[8px] text-slate-500 uppercase">HİSSEDİLEN</div>
-                            <div className="text-[10px] font-bold text-slate-300">AZ BULUTLU</div>
+                            <div className="text-[8px] text-slate-500 uppercase">HAVA DURUMU TRENDİ</div>
+                            <div className="text-[10px] font-bold text-slate-300">{pressureTrend}</div>
                         </div>
                     </div>
                 </div>
