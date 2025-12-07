@@ -8,7 +8,8 @@ import { VHFRadio } from './components/VHFRadio';
 import { ShipManagement } from './components/ShipManagement';
 import { TacticalCompass } from './components/TacticalCompass';
 import { Gauge } from './components/Gauge';
-import { VoiceModal } from './components/modals/VoiceModal'; // New Import
+import { ControlPanel } from './components/ControlPanel';
+import { SystemStatus } from './components/SystemStatus';
 
 export default function App() {
   const [apiKey, setApiKey] = useState<string>('');
@@ -20,7 +21,6 @@ export default function App() {
   const [agentStatus, setAgentStatus] = useState<AgentStatus>(AgentStatus.IDLE);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isConnected, setIsConnected] = useState(false);
-  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false); // Modal State
   const [showSpyglass, setShowSpyglass] = useState(false);
   
   const [vhfStatus, setVhfStatus] = useState<VHFStatus>({
@@ -156,15 +156,15 @@ export default function App() {
         await service.connectLive();
         adaServiceRef.current = service;
         setIsConnected(true);
-        // Do not add system message to visible list anymore
     } catch (e) { console.error(e); }
   };
 
   const toggleVoiceInterface = async () => {
-      if (!isConnected) {
+      if (isConnected) {
+          await handleDisconnect();
+      } else {
           await handleConnect();
       }
-      setIsVoiceModalOpen(true);
   };
 
   const handleDisconnect = async () => {
@@ -174,7 +174,6 @@ export default function App() {
         setAgentStatus(AgentStatus.IDLE);
         adaServiceRef.current = null;
     }
-    setIsVoiceModalOpen(false);
   };
 
   if (!hasKey && !process.env.API_KEY) return <div className="min-h-screen flex items-center justify-center bg-black text-white font-mono">API KEY MISSING</div>;
@@ -207,29 +206,25 @@ export default function App() {
             />
         }
 
-        {/* Voice Modal (The New "Popup") */}
-        <VoiceModal 
-            isOpen={isVoiceModalOpen} 
-            onClose={() => setIsVoiceModalOpen(false)} 
-            status={agentStatus}
-            lastText={messages.length > 0 ? messages[messages.length - 1].content : ""}
-        />
-
         {/* --- MAIN COCKPIT GRID --- */}
         <main className="flex-1 p-2 grid grid-cols-1 lg:grid-cols-12 gap-2 overflow-y-auto lg:overflow-hidden relative pb-20">
             
-            {/* 1. COMPASS (Left/Top) - DOMINANT */}
+            {/* 1. TACTICAL DISPLAY (Left - 7 Cols) */}
             <div className="col-span-1 lg:col-span-7 flex flex-col gap-2 min-h-[450px]">
                  <div className="flex-1 glass-panel rounded-xl relative overflow-hidden border-cyan-500/10 shadow-2xl bg-black">
-                     <TacticalCompass data={nmeaData} />
+                     <TacticalCompass 
+                        data={nmeaData} 
+                        status={agentStatus}
+                        onTalk={toggleVoiceInterface} 
+                     />
                  </div>
             </div>
 
-            {/* 2. SYSTEMS (Right/Bottom) */}
-            <div className="col-span-1 lg:col-span-5 flex flex-col gap-2 h-full">
+            {/* 2. SYSTEMS MONITOR & CONTROLS (Right - 5 Cols) */}
+            <div className="col-span-1 lg:col-span-5 flex flex-col gap-2 h-full overflow-y-auto custom-scrollbar pr-1">
                 
-                {/* Engine Gauges */}
-                <div className="glass-panel p-3 flex flex-col gap-2">
+                {/* A. Engines */}
+                <div className="glass-panel p-3 flex flex-col gap-2 shrink-0">
                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5 pb-1">MOTOR DEVİRLERİ</div>
                      <div className="grid grid-cols-2 gap-2">
                         <Gauge value={nmeaData.engines.port.rpm} min={0} max={4000} label="İSKELE" unit="RPM" color="#f59e0b" />
@@ -237,37 +232,29 @@ export default function App() {
                      </div>
                 </div>
 
-                {/* Tanks */}
-                <div className="flex-1 glass-panel overflow-hidden rounded-xl relative p-0 border-slate-700/50 min-h-[200px]">
-                     <ShipManagement data={shipData} />
+                {/* B. Power & Environment (New) */}
+                <div className="shrink-0">
+                    <SystemStatus data={nmeaData} />
                 </div>
 
-                {/* VHF Monitor (Visual Only) */}
+                {/* C. Manual Controls (New) */}
+                <div className="shrink-0">
+                    <ControlPanel data={nmeaData} onControl={handleControlAction} />
+                </div>
+
+                {/* D. Ship Admin (Tanks/Logs/Raw Data) */}
+                <div className="flex-1 glass-panel overflow-hidden rounded-xl relative p-0 border-slate-700/50 min-h-[200px]">
+                     <ShipManagement data={shipData} nmea={nmeaData} />
+                </div>
+
+                {/* E. VHF Radio */}
                 <div className="h-24 shrink-0">
                     <VHFRadio status={vhfStatus} />
                 </div>
             </div>
         </main>
-
-        {/* --- THE FLOATING ACTION BUTTON (RADIO PTT) --- */}
-        <div className="fixed bottom-6 right-6 z-[100]">
-            <button 
-                onClick={toggleVoiceInterface}
-                className={`w-16 h-16 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(6,182,212,0.4)] transition-all duration-300 active:scale-95 group ${
-                    isConnected 
-                    ? 'bg-gradient-to-br from-emerald-500 to-emerald-700 border-2 border-emerald-300' 
-                    : 'bg-gradient-to-br from-cyan-600 to-cyan-900 border-2 border-cyan-400'
-                }`}
-            >
-                {/* Icon */}
-                <svg className="w-8 h-8 text-white drop-shadow-md group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                </svg>
-                
-                {/* Status Indicator Dot */}
-                <div className={`absolute top-0 right-0 w-4 h-4 rounded-full border-2 border-black ${agentStatus !== 'IDLE' ? 'bg-amber-400 animate-bounce' : 'hidden'}`}></div>
-            </button>
-        </div>
+        
+        {/* --- PTT BUTTON REMOVED --- */}
 
     </div>
   );

@@ -1,167 +1,116 @@
 import React from 'react';
-import { NMEAData } from '../types';
+import { NMEAData, AgentStatus } from '../types';
 
 interface TacticalCompassProps {
   data: NMEAData;
+  status?: AgentStatus;
+  onTalk?: () => void;
 }
 
-export const TacticalCompass: React.FC<TacticalCompassProps> = ({ data }) => {
-  const size = 400; 
-  const center = size / 2;
-  const radius = 140; // Slightly smaller to make room for Wind Arrow
+export const TacticalCompass: React.FC<TacticalCompassProps> = ({ data, status = AgentStatus.IDLE, onTalk }) => {
+  
+  // Status Logic for UI Feedback
+  const isActive = status !== AgentStatus.IDLE;
+  let borderColor = "border-slate-800";
+  let statusText = "STANDBY";
+  let bgClass = "bg-black";
 
-  // Alert Logic
-  const isShallow = data.depth < 3.0; 
+  if (status === AgentStatus.LISTENING) {
+      borderColor = "border-emerald-500";
+      statusText = "DİNLİYOR";
+      bgClass = "bg-emerald-950/30";
+  } else if (status === AgentStatus.SPEAKING) {
+      borderColor = "border-indigo-500";
+      statusText = "KONUŞUYOR";
+      bgClass = "bg-indigo-950/30";
+  } else if (status === AgentStatus.THINKING || status === AgentStatus.EXECUTING) {
+      borderColor = "border-amber-500";
+      statusText = "İŞLENİYOR";
+      bgClass = "bg-amber-950/30";
+  }
 
-  // Wind Logic
-  // windAngle is usually Relative 0-360. 
-  // 0 = Bow, 90 = Starboard Beam, 180 = Stern, 270 = Port Beam.
-  // We want the arrow to point FROM the wind direction TOWARDS the center.
-  // If wind is 45 (Stbd Bow), arrow should be AT 45 degrees, pointing IN.
-  // Rotation of the arrow group should be `data.windAngle`.
-  // Arrow Graphic should point DOWN (towards center).
-  const windIsStarboard = data.windAngle > 0 && data.windAngle < 180;
-  const windColor = windIsStarboard ? '#10b981' : '#ef4444'; // Green (Stbd) / Red (Port) for Wind
-
-  // Generate Compass Ticks
-  const renderCompassRing = () => {
-    const ticks = [];
-    for (let i = 0; i < 360; i += 2) {
-      const isCardinal = i % 90 === 0;
-      const isMajor = i % 10 === 0;
-      
-      const length = isCardinal ? 15 : isMajor ? 10 : 5;
-      const weight = isCardinal ? 3 : isMajor ? 2 : 1;
-      const color = isCardinal ? '#06b6d4' : isMajor ? '#475569' : '#1e293b';
-      
-      ticks.push(
-        <line
-          key={`tick-${i}`}
-          x1={center} y1={center - radius}
-          x2={center} y2={center - radius + length}
-          stroke={color}
-          strokeWidth={weight}
-          transform={`rotate(${i} ${center} ${center})`}
-        />
-      );
-
-      if (i % 30 === 0) {
-        let label = i.toString();
-        let labelColor = "#64748b";
-        let fontSize = "12";
-        let fontWeight = "normal";
-
-        if (i === 0) { label = "N"; labelColor = "#ef4444"; fontSize = "20"; fontWeight = "bold"; }
-        else if (i === 90) { label = "E"; labelColor = "#cbd5e1"; fontSize = "20"; fontWeight = "bold"; }
-        else if (i === 180) { label = "S"; labelColor = "#cbd5e1"; fontSize = "20"; fontWeight = "bold"; }
-        else if (i === 270) { label = "W"; labelColor = "#cbd5e1"; fontSize = "20"; fontWeight = "bold"; }
-        else { label = (i / 10).toString(); }
-
-        ticks.push(
-          <text
-            key={`text-${i}`}
-            x={center} y={center - radius + 30}
-            fill={labelColor}
-            fontSize={fontSize}
-            fontWeight={fontWeight}
-            textAnchor="middle"
-            transform={`rotate(${i} ${center} ${center})`}
-            style={{ fontFamily: 'Rajdhani' }}
-          >
-            {label}
-          </text>
-        );
-      }
-    }
-    return ticks;
+  const getCardinal = (deg: number) => {
+      const val = Math.floor((deg / 22.5) + 0.5);
+      const arr = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+      return arr[val % 16];
   };
 
+  const isShallow = data.depth < 3.0;
+
   return (
-    <div className={`w-full h-full flex items-center justify-center bg-[#09090b] relative overflow-hidden transition-colors duration-500 ${isShallow ? 'animate-pulse bg-red-950/40' : ''}`}>
+    <div className="w-full h-full bg-black flex flex-col font-sans select-none border-4 border-slate-900 rounded-xl overflow-hidden">
         
-        {/* Shallow Alarm */}
-        {isShallow && (
-            <div className="absolute top-10 left-0 right-0 z-50 flex justify-center">
-                <div className="bg-red-600 text-white font-bold text-xl px-4 py-1 rounded animate-bounce shadow-lg">SIĞ SU!</div>
+        {/* TOP ROW: HEADING (Voice Trigger) */}
+        <div 
+            onClick={onTalk}
+            className={`h-[45%] relative border-b-4 ${borderColor} ${bgClass} flex flex-col items-center justify-center cursor-pointer transition-colors duration-200 group`}
+        >
+            <div className="absolute top-2 left-4 text-slate-500 text-sm font-bold tracking-widest">HEADING</div>
+            <div className={`absolute top-2 right-4 text-xs font-bold tracking-widest px-2 py-1 rounded ${isActive ? 'bg-white text-black' : 'bg-slate-800 text-slate-500'}`}>
+                {isActive ? statusText : 'PTT'}
             </div>
-        )}
-
-        <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-full max-w-[600px] max-h-[600px]">
             
-            {/* 1. HORIZON BACKGROUND */}
-            <defs>
-                <clipPath id="innerCircleClip">
-                    <circle cx={center} cy={center} r={radius - 10} />
-                </clipPath>
-                <linearGradient id="skySea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="49%" stopColor="#0f172a" />
-                    <stop offset="50%" stopColor="#06b6d4" stopOpacity="0.5" />
-                    <stop offset="51%" stopColor="#083344" />
-                </linearGradient>
-            </defs>
-            <circle cx={center} cy={center} r={radius - 10} fill="url(#skySea)" opacity="0.4" />
+            <div className="flex items-baseline gap-4 mt-2">
+                <span className={`text-[9rem] leading-none font-display font-bold tracking-tighter ${isActive ? 'text-white' : 'text-slate-100'}`}>
+                    {data.headingMagnetic.toFixed(0).padStart(3, '0')}
+                </span>
+                <span className="text-4xl font-bold text-slate-600">°</span>
+            </div>
+            <div className="text-3xl font-bold text-cyan-500 tracking-[0.2em] -mt-4">
+                {getCardinal(data.headingMagnetic)}
+            </div>
+        </div>
 
-            {/* 2. ROTATING COMPASS RING (Heading Up) */}
-            <g transform={`rotate(${-data.headingMagnetic} ${center} ${center})`} className="transition-transform duration-700 ease-out">
-                {renderCompassRing()}
-            </g>
-
-            {/* 3. WIND INDICATOR (The User's Request) */}
-            {/* This arrow stays relative to the boat. It rotates based on Apparent Wind Angle */}
-            <g transform={`rotate(${data.windAngle} ${center} ${center})`}>
-                {/* Arrow Head pointing IN towards center (Wind Origin) */}
-                <path 
-                    d={`M${center} ${center - radius - 15} L${center - 12} ${center - radius - 35} L${center + 12} ${center - radius - 35} Z`} 
-                    fill={windColor} 
-                    stroke="black" 
-                    strokeWidth="2"
-                    className="drop-shadow-lg"
-                />
-                {/* Shaft */}
-                <rect x={center - 2} y={center - radius - 55} width="4" height="20" fill={windColor} />
-                {/* Label */}
-                <text 
-                    x={center} 
-                    y={center - radius - 60} 
-                    fill={windColor} 
-                    fontSize="14" 
-                    fontWeight="bold" 
-                    textAnchor="middle"
-                    transform={`rotate(${-data.windAngle} ${center} ${center - radius - 60})`} // Keep text upright
-                >
-                    {data.windSpeed.toFixed(1)} kn
-                </text>
-            </g>
-
-            {/* 4. BOAT ICON (Fixed Center) */}
-            <g transform={`translate(${center}, ${center})`}>
-                <path d="M0 -30 Q15 0 12 40 L0 45 L-12 40 Q-15 0 0 -30" fill="#1e293b" stroke="#cbd5e1" strokeWidth="2" />
-                <line x1="0" y1="-30" x2="0" y2="45" stroke="#cbd5e1" strokeWidth="1" strokeOpacity="0.5" />
-            </g>
-
-            {/* 5. HEADING (Top Big) */}
-            <g transform={`translate(${center}, ${center - 50})`}>
-                 <text textAnchor="middle" className="font-display font-bold fill-white text-5xl tracking-tighter filter drop-shadow-md">
-                     {data.headingMagnetic.toFixed(0).padStart(3, '0')}
-                     <tspan fontSize="24" fill="#64748b" dy="-15">°</tspan>
-                 </text>
-            </g>
-
-            {/* 6. DATA WINGS (Bottom) */}
-            
-            {/* SPEED */}
-            <g transform={`translate(${center - 60}, ${center + 120})`}>
-                <text textAnchor="middle" className="font-display font-bold fill-white text-4xl">{data.speedOverGround.toFixed(1)}</text>
-                <text y="15" textAnchor="middle" className="font-mono text-[10px] fill-slate-400">KNOT</text>
-            </g>
+        {/* MIDDLE ROW: SOG & DEPTH */}
+        <div className="h-[35%] grid grid-cols-2 border-b-4 border-slate-900">
+            {/* SOG */}
+            <div className="border-r-4 border-slate-900 bg-slate-950 flex flex-col items-center justify-center relative">
+                <div className="absolute top-2 left-3 text-slate-500 text-xs font-bold tracking-widest">SOG (SPEED)</div>
+                <div className="flex items-baseline">
+                    <span className="text-[5rem] leading-none font-display font-bold text-emerald-400 tracking-tight">
+                        {data.speedOverGround.toFixed(1)}
+                    </span>
+                </div>
+                <div className="text-sm font-bold text-emerald-700/50 mt-1">KNOTS</div>
+            </div>
 
             {/* DEPTH */}
-            <g transform={`translate(${center + 60}, ${center + 120})`}>
-                <text textAnchor="middle" className={`font-display font-bold text-4xl ${isShallow ? 'fill-red-500' : 'fill-white'}`}>{data.depth.toFixed(1)}</text>
-                <text y="15" textAnchor="middle" className="font-mono text-[10px] fill-slate-400">METRE</text>
-            </g>
+            <div className={`flex flex-col items-center justify-center relative ${isShallow ? 'bg-red-950 animate-pulse' : 'bg-slate-950'}`}>
+                <div className="absolute top-2 left-3 text-slate-500 text-xs font-bold tracking-widest">DEPTH</div>
+                <div className="flex items-baseline">
+                    <span className={`text-[5rem] leading-none font-display font-bold tracking-tight ${isShallow ? 'text-red-500' : 'text-white'}`}>
+                        {data.depth.toFixed(1)}
+                    </span>
+                </div>
+                <div className={`text-sm font-bold mt-1 ${isShallow ? 'text-red-700' : 'text-slate-600'}`}>METERS</div>
+            </div>
+        </div>
 
-        </svg>
+        {/* BOTTOM ROW: WIND & ENV */}
+        <div className="h-[20%] grid grid-cols-3 bg-slate-900">
+            {/* TWS */}
+            <div className="flex flex-col items-center justify-center border-r-4 border-black bg-slate-950">
+                <div className="text-[10px] font-bold text-slate-500">TWS (WIND)</div>
+                <div className="text-3xl font-bold text-amber-400 font-display">{data.windSpeed.toFixed(1)} <span className="text-sm text-slate-600">kn</span></div>
+            </div>
+
+            {/* TWD */}
+            <div className="flex flex-col items-center justify-center border-r-4 border-black bg-slate-950">
+                <div className="text-[10px] font-bold text-slate-500">WIND ANGLE</div>
+                <div className="flex items-center gap-2">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-amber-500" style={{ transform: `rotate(${data.windAngle}deg)` }}>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 19V5M5 12l7-7 7 7" />
+                    </svg>
+                    <div className="text-3xl font-bold text-white font-display">{data.windAngle.toFixed(0)}°</div>
+                </div>
+            </div>
+
+            {/* TEMP */}
+            <div className="flex flex-col items-center justify-center bg-slate-950">
+                <div className="text-[10px] font-bold text-slate-500">SEA TEMP</div>
+                <div className="text-3xl font-bold text-cyan-200 font-display">{data.waterTemp.toFixed(1)} <span className="text-sm text-slate-600">°C</span></div>
+            </div>
+        </div>
     </div>
   );
 };

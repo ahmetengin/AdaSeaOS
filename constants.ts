@@ -8,7 +8,7 @@ export const INITIAL_NMEA_DATA: NMEAData = {
   windAngle: 45,
   depth: 8.4,
   waterTemp: 21.5,
-  latitude: 40.9626, // West Istanbul Marina approx
+  latitude: 40.9626, // West Istanbul Marina (Accurate)
   longitude: 28.6080,
   hybrid: {
       mode: 'ELECTRIC',
