@@ -1,0 +1,8 @@
+{
+  "name": "Ada - Autonomous Marine Agent",
+  "description": "A sophisticated autonomous agent named Ada, designed for maritime operations, route planning, and dynamic skill acquisition.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ]
+}
