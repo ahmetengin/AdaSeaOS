@@ -10,16 +10,20 @@ import { TacticalCompass } from './components/TacticalCompass';
 import { Gauge } from './components/Gauge';
 import { ControlPanel } from './components/ControlPanel';
 import { SystemStatus } from './components/SystemStatus';
+import { SystemLayers } from './components/SystemLayers';
 
 export default function App() {
   const [apiKey, setApiKey] = useState<string>('');
   const [hasKey, setHasKey] = useState(false);
   
+  // App State
+  const [isBooting, setIsBooting] = useState(true);
+  const [bootLog, setBootLog] = useState<string[]>([]);
+  
   const [nmeaData, setNmeaData] = useState<NMEAData>(INITIAL_NMEA_DATA);
   const [shipData, setShipData] = useState<ShipData>(INITIAL_SHIP_DATA);
   
   const [agentStatus, setAgentStatus] = useState<AgentStatus>(AgentStatus.IDLE);
-  const [messages, setMessages] = useState<Message[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [showSpyglass, setShowSpyglass] = useState(false);
   
@@ -33,6 +37,31 @@ export default function App() {
   
   const adaServiceRef = useRef<AdaService | null>(null);
   const signalKRef = useRef<SignalKService | null>(null);
+
+  // --- BOOT SEQUENCE SIMULATION ---
+  useEffect(() => {
+    const logs = [
+        "ADASEA OS KERNEL v1.0.4 initializing...",
+        "Loading Hardware Abstraction Layer...",
+        "Mounting NMEA2000 Gateway at /dev/ttyUSB0...",
+        "Initializing H3 Spatial Indexing (Res 9)...",
+        "Connecting to Neural Engine (Gemini 2.5 Flash)...",
+        "Calibrating Volvo Penta Interface...",
+        "System Check: SENSING [OK] INTELLIGENCE [OK] ACTUATION [OK]",
+        "Welcome aboard, Captain."
+    ];
+
+    let delay = 0;
+    logs.forEach((log, i) => {
+        delay += Math.random() * 400 + 200;
+        setTimeout(() => {
+            setBootLog(prev => [...prev, log]);
+            if (i === logs.length - 1) {
+                setTimeout(() => setIsBooting(false), 800);
+            }
+        }, delay);
+    });
+  }, []);
 
   // --- Helper: Simulate Marina Voice ---
   const speakAsMarina = (text: string) => {
@@ -178,20 +207,48 @@ export default function App() {
 
   if (!hasKey && !process.env.API_KEY) return <div className="min-h-screen flex items-center justify-center bg-black text-white font-mono">API KEY MISSING</div>;
 
+  // --- BOOT SCREEN RENDER ---
+  if (isBooting) {
+      return (
+          <div className="w-full h-[100dvh] bg-black text-emerald-500 font-mono p-10 flex flex-col justify-end">
+              <div className="mb-8">
+                  <h1 className="text-4xl font-bold text-white mb-2 tracking-widest">ADASEA <span className="text-emerald-500">OS</span></h1>
+                  <div className="h-1 w-32 bg-emerald-500 animate-pulse"></div>
+              </div>
+              <div className="space-y-1 text-sm">
+                  {bootLog.map((log, i) => (
+                      <div key={i} className="animate-in fade-in slide-in-from-left-2 duration-300">
+                          <span className="text-slate-500 mr-2">[{new Date().toLocaleTimeString()}]</span>
+                          {log}
+                      </div>
+                  ))}
+                  <div className="animate-pulse">_</div>
+              </div>
+          </div>
+      );
+  }
+
   return (
     <div className="w-full text-slate-200 flex flex-col relative font-sans selection:bg-cyan-500/30 selection:text-cyan-100 bg-[#000000] h-[100dvh] overflow-hidden">
         
         {/* --- HEADER --- */}
         <div className="h-12 flex items-center justify-between px-4 z-50 shrink-0 bg-black border-b border-white/5">
             <div className="flex items-center gap-4">
-                 <h1 className="text-lg font-bold tracking-[0.2em] text-white font-display">ADA<span className="text-cyan-500 font-light">OS</span></h1>
+                 <h1 className="text-lg font-bold tracking-[0.2em] text-white font-display">ADA <span className="text-cyan-500 font-light">NODE</span></h1>
+                 
+                 {/* System Layers Visualizer */}
+                 <div className="hidden md:block">
+                     <SystemLayers isConnected={isConnected} />
+                 </div>
             </div>
+            
             <div className="flex items-center gap-2">
                  <div className="text-[10px] font-mono text-slate-500 hidden md:block">{nmeaData.latitude.toFixed(4)}N / {nmeaData.longitude.toFixed(4)}E</div>
                  <button 
                     onClick={() => setShowSpyglass(true)} 
-                    className="p-2 bg-cyan-900/20 text-cyan-400 rounded-full hover:bg-cyan-900/50"
+                    className="p-2 bg-cyan-900/20 text-cyan-400 rounded-full hover:bg-cyan-900/50 flex items-center gap-2 px-3"
                  >
+                    <span className="text-[10px] font-bold tracking-widest hidden md:block">SPYGLASS</span>
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
                  </button>
             </div>
@@ -209,9 +266,9 @@ export default function App() {
         {/* --- MAIN COCKPIT GRID --- */}
         <main className="flex-1 p-2 grid grid-cols-1 lg:grid-cols-12 gap-2 overflow-y-auto lg:overflow-hidden relative pb-20">
             
-            {/* 1. TACTICAL DISPLAY (Left - 7 Cols) */}
+            {/* 1. B&G NAVIGATION DISPLAY (Left - 7 Cols) */}
             <div className="col-span-1 lg:col-span-7 flex flex-col gap-2 min-h-[450px]">
-                 <div className="flex-1 glass-panel rounded-xl relative overflow-hidden border-cyan-500/10 shadow-2xl bg-black">
+                 <div className="flex-1 rounded-xl relative overflow-hidden border border-slate-800 shadow-2xl bg-black">
                      <TacticalCompass 
                         data={nmeaData} 
                         status={agentStatus}
@@ -225,24 +282,24 @@ export default function App() {
                 
                 {/* A. Engines */}
                 <div className="glass-panel p-3 flex flex-col gap-2 shrink-0">
-                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5 pb-1">MOTOR DEVİRLERİ</div>
+                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5 pb-1">VOLVO PENTA D3</div>
                      <div className="grid grid-cols-2 gap-2">
                         <Gauge value={nmeaData.engines.port.rpm} min={0} max={4000} label="İSKELE" unit="RPM" color="#f59e0b" />
                         <Gauge value={nmeaData.engines.stbd.rpm} min={0} max={4000} label="SANCAK" unit="RPM" color="#f59e0b" />
                      </div>
                 </div>
 
-                {/* B. Power & Environment (New) */}
+                {/* B. Power & Environment */}
                 <div className="shrink-0">
                     <SystemStatus data={nmeaData} />
                 </div>
 
-                {/* C. Manual Controls (New) */}
+                {/* C. Manual Controls */}
                 <div className="shrink-0">
                     <ControlPanel data={nmeaData} onControl={handleControlAction} />
                 </div>
 
-                {/* D. Ship Admin (Tanks/Logs/Raw Data) */}
+                {/* D. Ship Admin */}
                 <div className="flex-1 glass-panel overflow-hidden rounded-xl relative p-0 border-slate-700/50 min-h-[200px]">
                      <ShipManagement data={shipData} nmea={nmeaData} />
                 </div>
@@ -253,9 +310,6 @@ export default function App() {
                 </div>
             </div>
         </main>
-        
-        {/* --- PTT BUTTON REMOVED --- */}
-
     </div>
   );
 }

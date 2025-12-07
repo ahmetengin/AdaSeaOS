@@ -118,6 +118,18 @@ export interface HexCell {
     status: 'OPTIMAL' | 'CAUTION' | 'DANGER' | 'RESTRICTED';
 }
 
+// AIS Target
+export interface AISTarget {
+    mmsi: string;
+    name: string;
+    type: string;
+    lat: number;
+    lng: number;
+    sog: number;
+    cog: number;
+    distance?: number;
+}
+
 // Chat types
 export interface Message {
   id: string;
@@ -130,6 +142,7 @@ export interface Message {
 // Agent State
 export enum AgentStatus {
   IDLE = 'IDLE',
+  BOOTING = 'BOOTING', // New state
   LISTENING = 'LISTENING',
   THINKING = 'THINKING',
   SPEAKING = 'SPEAKING',
